@@ -1,46 +1,30 @@
 const express = require('express');
 const cors = require('cors');
-
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
-
-const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
-
-app.get('/', (req, res) => res.json({ status: 'SlideAI backend online' }));
-
+const GEMINI_KEY = process.env.GEMINI_API_KEY;
+app.get('/', (req, res) => res.json({ status: 'SlideAI online', engine: 'Gemini' }));
 app.post('/generate', async (req, res) => {
   const { prompt } = req.body;
   if (!prompt) return res.status(400).json({ error: 'prompt required' });
-  if (!ANTHROPIC_KEY) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not set' });
-
+  if (!GEMINI_KEY) return res.status(500).json({ error: 'GEMINI_API_KEY not set' });
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
+    const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 8000,
-        system: 'Você é especialista em criação de apresentações profissionais. Retorne APENAS JSON válido sem markdown ou texto extra.',
-        messages: [{ role: 'user', content: prompt }],
-      }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: 'Retorne APENAS JSON válido sem markdown.\n\n' + prompt }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 8192 } }),
     });
-
     const data = await response.json();
-    if (!response.ok) return res.status(response.status).json(data);
-
-    const text = data.content?.map(b => b.text || '').join('') || '';
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     const clean = text.replace(/```json|```/g, '').trim();
-    const parsed = JSON.parse(clean);
+    const match = clean.match(/\{[\s\S]*\}/);
+    const parsed = JSON.parse(match ? match[0] : clean);
     res.json({ result: parsed });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
-
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`SlideAI backend rodando na porta ${PORT}`));
+app.listen(PORT, () => console.log(`SlideAI (Gemini) porta ${PORT}`));
